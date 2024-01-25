@@ -20,7 +20,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'MavicPlannerNode = project_pkg.MavicPlannerNode:main'
+            'MavicPlannerNode = project_pkg.MavicPlannerNode:main',
+            'TurtleBotControl = project_pkg.turtleBotControl:main'
         ],
     },
 )
