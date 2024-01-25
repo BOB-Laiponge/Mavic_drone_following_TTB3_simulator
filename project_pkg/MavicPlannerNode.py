@@ -37,7 +37,7 @@ class MyPlannerNode(Node):
         self.ts.registerCallback(self.callback)
         #self.ts = message_filters.TimeSynchronizer([self.subscription_1, self.subscription_2], 10)
 
-        self.publisher_cmd = self.create_publisher(Twist, 'cmd_vel', 10)
+        self.publisher_cmd = self.create_publisher(Twist, '/Mavic_2_PRO/cmd_vel', 10)
         #timer_period = 1.0 
         #self.timer = self.create_timer(timer_period, self.coordinate_generation)
         #print('working?')
@@ -54,13 +54,13 @@ class MyPlannerNode(Node):
         self.next_pose.point.x = msg.point.x
         self.next_pose.point.y = msg.point.y
         self.next_pose.point.z = msg.point.z
-        print(f"TTB3 POSE : {self.next_pose.point.x} ; {self.next_pose.point.y} ; {self.next_pose.point.z}")
+        #print(f"TTB3 POSE : {self.next_pose.point.x} ; {self.next_pose.point.y} ; {self.next_pose.point.z}")
         
     def callback(self,msg1,msg2,msg3):
         """
         Callback function.
         """
-        print("DRONE CALLBACK")
+        #print("DRONE CALLBACK")
         x0 = msg1.point.x
         y0 = msg1.point.y
         z0 = msg1.point.z
@@ -73,12 +73,15 @@ class MyPlannerNode(Node):
         v0 = msg3.data # /gps/speed
         w0 = msg2.angular_velocity.z
 
-        print(x0)
+        #print(f"DRONE : {x0} ; {y0} ; {z0}")
 
         """
         Quaternion to Euler angles
         """
         oris = euler_from_quaternion(qx, qy, qz, qw)
+
+        #print(f"Yaw : {oris[2]}")
+
         yaw0 = oris[2]
         #self.get_logger().info('mavic yaw: %s' % yaw0)
         yaw0rad = np.deg2rad(yaw0)
@@ -127,6 +130,8 @@ class MyPlannerNode(Node):
         else:    
             u, predicted_trajectory = dwa_local_planning(x, kinematic, goal, ob)
 
+
+        print(f"DRONE VEL : {u[0]} ; {u[1]}")
         # Publish the coordinates to the topic
         #vx_omega = [vx, omega]
         #print('Speeds: ', vx_omega)
