@@ -17,7 +17,6 @@ import numpy as np
 import math
 import random # Python library to generate random numbers
 from .euler import euler_from_quaternion
-from .polynomial import quintic_polynomials_planner
 from .dynamicwindow import dwa_local_planning
 
 
