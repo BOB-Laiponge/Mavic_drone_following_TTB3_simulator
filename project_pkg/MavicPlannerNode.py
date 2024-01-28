@@ -29,18 +29,13 @@ class MyPlannerNode(Node):
         self.subscription_2 = message_filters.Subscriber(self, Imu, '/imu')
         self.subscription_3 = message_filters.Subscriber(self, Float32, '/Mavic_2_PRO/gps/speed')
 
-        #self.subscription_4 = message_filters.Subscriber(self, PointStamped, 'next_pose')
         self.next_pose=PointStamped()
         self.create_subscription(PointStamped, '/TurtleBot3Burger/gps', self.next_pose_callback, 1)
 
         self.ts = message_filters.ApproximateTimeSynchronizer([self.subscription_1, self.subscription_2, self.subscription_3], 30, 0.01, allow_headerless=True)
         self.ts.registerCallback(self.callback)
-        #self.ts = message_filters.TimeSynchronizer([self.subscription_1, self.subscription_2], 10)
 
         self.publisher_cmd = self.create_publisher(Twist, '/Mavic_2_PRO/cmd_vel', 10)
-        #timer_period = 1.0 
-        #self.timer = self.create_timer(timer_period, self.coordinate_generation)
-        #print('working?')
           
         self.landing = False
         self.subscription_landing = self.create_subscription(Bool, '/pioneer/ready_to_land', self.callback_landing, 10)
@@ -83,27 +78,12 @@ class MyPlannerNode(Node):
         #print(f"Yaw : {oris[2]}")
 
         yaw0 = oris[2]
-        #self.get_logger().info('mavic yaw: %s' % yaw0)
         yaw0rad = np.deg2rad(yaw0)
-        ####################################    
-        # Target position and orientation  
-        #x1 = msg4.pose.pose.position.x
-        #y1 = msg4.pose.pose.position.y
         x1 = self.next_pose.point.x
         y1 = self.next_pose.point.y
-        #self.get_logger().info('Publishing "%s" - "%s" - "%s"'% (msg.point.x, msg.point.y, msg.point.z))
-        #self.get_logger().info('next pos "%s" - "%s"'% (x1,y1))
-    
-        #target_pos = [-10.0, 10.0]
-        #x1 = target_pos[0]
-        #y1 = target_pos[1]
-        # x1 = msg4.pose.pose.position.x
-        # y1 = msg4.pose.pose.position.y
-
         x = np.array([x0, y0, yaw0rad, v0, w0])
         goal = np.array([x1, y1])
 
-        #trajectory = np.array(x)
         ob = np.array([ [-14.0, -14.5],
                         [-19.6, -24.4],
                         [-22.0,   6.2],
@@ -132,9 +112,8 @@ class MyPlannerNode(Node):
 
 
         print(f"DRONE VEL : {u[0]} ; {u[1]}")
+        
         # Publish the coordinates to the topic
-        #vx_omega = [vx, omega]
-        #print('Speeds: ', vx_omega)
         self.publish_results(u)
      
     def publish_results(self, vel):

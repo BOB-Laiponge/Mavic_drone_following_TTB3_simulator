@@ -18,7 +18,6 @@ import numpy as np
 import math
 import random # Python library to generate random numbers
 from .euler import euler_from_quaternion
-from .polynomial import quintic_polynomials_planner
 from .dynamicwindow import dwa_local_planning
 from .quintic_polynomials_planner import *
 
@@ -28,12 +27,7 @@ class TurtleBotControl(Node):
         super().__init__('TurtleBotControl')
         self.subscription_1 = message_filters.Subscriber(self, PointStamped, '/TurtleBot3Burger/gps')
         self.subscription_2 = message_filters.Subscriber(self, Imu, '/TurtleBot3Burger/imu')
-        #self.subscription_2 = message_filters.Subscriber(self, Odometry, '/odom')
-        #self.subscription_3 = message_filters.Subscriber(self, Float32, '/TurtleBot3Burger/gps/speed')
 
-        self.create_subscription(Float32, '/TurtleBot3Burger/gps/speed', self.speed_callback, 10)
-
-        #self.ts = message_filters.ApproximateTimeSynchronizer([self.subscription_1, self.subscription_2, self.subscription_3], 30, 0.01, allow_headerless=True)
         self.ts = message_filters.ApproximateTimeSynchronizer([self.subscription_1, self.subscription_2], 30, 0.01, allow_headerless=True)
         self.ts.registerCallback(self.callback)
 
@@ -42,10 +36,6 @@ class TurtleBotControl(Node):
         self.v0 = 0.0
         self.dist_prec = 99999.0
 
-        #self.next_pose=PointStamped()
-        # self.create_subscription(PointStamped, '/TurtleBot3Burger/gps', self.next_pose_callback, self.freq_pose)
-        # self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
-
         self.vel_pub = self.create_publisher(Twist, '/TurtleBot3Burger/cmd_vel', 10)
 
         self.pose = Pose2D()
@@ -53,22 +43,6 @@ class TurtleBotControl(Node):
         self.trajectory = list()
 
         self.run()
-
-    '''
-    sx = 10.0  # start x position [m]
-    sy = 10.0  # start y position [m]
-    syaw = np.deg2rad(10.0)  # start yaw angle [rad]
-    sv = 1.0  # start speed [m/s]
-    sa = 0.1  # start accel [m/ss]
-    gx = 30.0  # goal x position [m]
-    gy = -10.0  # goal y position [m]
-    gyaw = np.deg2rad(20.0)  # goal yaw angle [rad]
-    gv = 1.0  # goal speed [m/s]
-    ga = 0.1  # goal accel [m/ss]
-    max_accel = 1.0  # max accel [m/ss]
-    max_jerk = 0.5  # max jerk [m/sss]
-    dt = 0.1  # time tick [s]
-    '''
 
     def run(self):
 
@@ -92,14 +66,6 @@ class TurtleBotControl(Node):
         w2 = [8, 2, np.deg2rad(180)]
         w3 = [6.33, 2, np.deg2rad(270)]
         w4 = [6.33, 0, np.deg2rad(0)]
-
-        '''
-        mvmt = [[sx, sy, syaw, sv, sa, w1[0], w1[1], w1[2], iv, ia, max_accel, max_jerk, dt], 
-                [w1[0], w1[1], w1[2], iv, ia, w2[0], w2[1], w2[2], iv, ia, max_accel, max_jerk, dt], 
-                [w2[0], w2[1], w2[2], iv, ia, w3[0], w3[1], w3[2], iv, ia, max_accel, max_jerk, dt], 
-                #[w3[0], w3[1], w3[2], iv, ia, w4[0], w4[1], w4[2], iv, ia, max_accel, max_jerk, dt], 
-                [w3[0], w3[1], w3[2], iv, ia, w4[0], w4[1], w4[2], iv, ia, max_accel, max_jerk, dt]]
-        '''
 
         mvmt = [[w4[0], w4[1], w4[2], iv, ia, w1[0], w1[1], w1[2], iv, ia, max_accel, max_jerk, dt], 
                 [w1[0], w1[1], w1[2], iv, ia, w2[0], w2[1], w2[2], iv, ia, max_accel, max_jerk, dt], 
@@ -167,41 +133,19 @@ class TurtleBotControl(Node):
         """
         Callback function.
         """
-        #print("callback?")
-        #self.next_pose.point.x = msg1.point.x
-        #self.next_pose.point.y = msg1.point.y
-        #self.next_pose.point.z = msg1.point.z
-
-        
-        
-        # get pose = (x, y, theta) from odometry topic
-        #quarternion = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w]
-        #oris = euler_from_quaternion(msg2.pose.pose.orientation.x, msg2.pose.pose.orientation.y, msg2.pose.pose.orientation.z, msg2.pose.pose.orientation.w)
         oris = euler_from_quaternion(msg2.orientation.x, msg2.orientation.y, msg2.orientation.z, msg2.orientation.w)
         roll = oris[0]
         pitch = oris[1]
         yaw = oris[2]
         
         self.pose.theta = yaw
-        #self.pose.x = msg2.pose.pose.position.x
-        #self.pose.y = msg2.pose.pose.position.y
         self.pose.x = msg1.point.x
         self.pose.y = msg1.point.y
 
         self.trajectory.append([self.pose.x, self.pose.y])  # save trajectory
-        #print(f"odom: x = {self.pose.x}, y = {self.pose.y}, theta = {yaw}, speed = {self.v0}")
-
         
 
         print(f"info ttb : x = {self.pose.x}, y = {self.pose.y}, theta = {yaw}, speed = {self.v0}")
-        
-
-        '''
-        vitesse_desiree, vitesse_angulaire, dist_precf, atteint = self.calculer_commande(self.pose.x, self.pose.y, self.pose.theta, 0.2, 10, 5, self.dist_prec)
-        print(f"self.dist = {self.dist_prec}, dist_prec = {dist_precf}")
-        self.publish_velocity([vitesse_desiree, vitesse_angulaire])
-        #print(f"vel ttb : lin = {vitesse_desiree}, ang = {vitesse_angulaire}")
-        '''
         
         
         if len(self.tab_deplacement) != 0:
