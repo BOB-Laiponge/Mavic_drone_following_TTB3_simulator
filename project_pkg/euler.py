@@ -20,6 +20,6 @@ def euler_from_quaternion(x, y, z, w):
 
     siny_cosp = 2 * (w * z + x * y)
     cosy_cosp = 1 - 2 * (y * y + z * z)
-    yaw = np.arctan2(siny_cosp, cosy_cosp)*180/math.pi
+    yaw = np.arctan2(siny_cosp, cosy_cosp)*180/math.pi # conversion en degré
 
     return [roll, pitch, yaw]

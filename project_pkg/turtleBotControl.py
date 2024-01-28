@@ -30,39 +30,34 @@ class TurtleBotControl(Node):
         #self.create_subscription(Imu, '/TurtleBot3Burger/imu', self.callbackGPS, 1)
         self.create_subscription(Float32, '/TurtleBot3Burger/gps/speed', self.callbackSpeed, 1)
         self.create_subscription(Imu,'/TurtleBot3Burger/imu', self.callbackImu, 1)
-        self.create_subscription(Imu,'/TurtleBot3Burger/gps', self.callbackImu, 1)
+        self.create_subscription(PointStamped,'/TurtleBot3Burger/gps', self.callbackGPS, 1)
 
 
-        self.next_pose=PointStamped()
-        self.last_speed = Float32()
-        self.last_imu = Imu()
+        self.last_speed = None # Float32()
+        self.last_imu = None # Imu()
+        self.last_pose = None
+        
+        print("Node initialized")
 
     def callbackImu(self, imu):
-        print(f"imu {imu.angular_velocity}")
-        pass
+        print(f"imu")
+        self.last_imu = imu
+
 
     def callbackSpeed(self, speed):
-        #print(speed.data)
+        print("speed")
+        self.last_speed = speed
+
+    def callbackGPS(self, msg):
+        self.posx = msg.point.x
+        self.posy = msg.point.y
+        self.posz = msg.point.z
+
+        print("gps")
+
+
+    def generate_trajectory(self):
         pass
-
-    def callbackGPS(self, msg2, msg):
-        qx = msg.orientation.x
-        qy = msg.orientation.y
-        qz = msg.orientation.z
-        qw = msg.orientation.w
-
-        print(qx)
-
-        """x = msg.point.x
-        y = msg.point.y
-        z = msg.point.z
-        # Calcul trajectoire
-        print(f"POS ROBOT : {x} , {y} , {z}")
-        # send vel
-        
-        kinematic = [0.3, 0.2]
-        # Kinetic : position, angular
-        self.publish_results([0.3,0.0])"""
 
     def publish_results(self, vel):
         msg = Twist() # Create a message of this type   
