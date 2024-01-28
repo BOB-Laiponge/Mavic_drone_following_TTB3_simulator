@@ -1,136 +1,233 @@
-# ROS2 specifications
-import random
-import numpy as np
 
-from .utils import quintic_polynomials_planner
-from .euler import euler_from_quaternion
+# Python libraries
+import time
 import rclpy # Import the ROS client library for Python
 import message_filters
 from rclpy.node import Node # Enables the use of rclpy's Node class
-#from std_msgs.msg import String
-#from std_msgs.msg import Float64MultiArray # Enable use of the std_msgs/Float64MultiArray message type        
-from geometry_msgs.msg import Twist, Vector3
-from geometry_msgs.msg import PointStamped # /gps/gps
 
+from geometry_msgs.msg import Twist
+from geometry_msgs.msg import PointStamped # /gps/gps
+from geometry_msgs.msg import Pose2D
+from sensor_msgs.msg import Imu            # /
+from std_msgs.msg import Bool
 from std_msgs.msg import Float32           # /gps/speed
 from nav_msgs.msg import Odometry           # /gps/speed
-from sensor_msgs.msg import Imu            # /
 
-#from rclpy.qos import qos_profile_sensor_data
 
+import numpy as np
+import math
+import random # Python library to generate random numbers
+from .euler import euler_from_quaternion
+from .polynomial import quintic_polynomials_planner
+from .dynamicwindow import dwa_local_planning
+from .quintic_polynomials_planner import *
 
 class TurtleBotControl(Node): 
     def __init__(self):
         # Initiate the Node class's constructor and give it a name
         super().__init__('TurtleBotControl')
         self.subscription_1 = message_filters.Subscriber(self, PointStamped, '/TurtleBot3Burger/gps')
-        #self.subscription_2 = message_filters.Subscriber(self, Imu, '/TurtleBot3Burger/imu')
-        #self.subscription_3 = message_filters.Subscriber(self, Vector3, '/TurtleBot3Burger/gps/speed_vector')
-        #self.publisher_cmd = self.create_publisher(Twist, '/TurtleBot3Burger/imu', 10)
+        self.subscription_2 = message_filters.Subscriber(self, Imu, '/TurtleBot3Burger/imu')
+        #self.subscription_2 = message_filters.Subscriber(self, Odometry, '/odom')
+        #self.subscription_3 = message_filters.Subscriber(self, Float32, '/TurtleBot3Burger/gps/speed')
 
-        #self.ts = message_filters.ApproximateTimeSynchronizer([self.subscription_1, self.subscription_2], 30, 0.01, allow_headerless=True)
-        #self.ts.registerCallback(self.callbackGPS)
+        self.create_subscription(Float32, '/TurtleBot3Burger/gps/speed', self.speed_callback, 10)
 
-        self.publisher_cmd = self.create_publisher(Twist, '/TurtleBot3Burger/cmd_vel', 10)
+        #self.ts = message_filters.ApproximateTimeSynchronizer([self.subscription_1, self.subscription_2, self.subscription_3], 30, 0.01, allow_headerless=True)
+        self.ts = message_filters.ApproximateTimeSynchronizer([self.subscription_1, self.subscription_2], 30, 0.01, allow_headerless=True)
+        self.ts.registerCallback(self.callback)
 
+        self.freq_pose = 10
+        self.tab_deplacement = list()
+        self.v0 = 0.0
+        self.dist_prec = 99999.0
 
-        #self.create_subscription(Imu, '/TurtleBot3Burger/imu', self.callbackGPS, 1)
-        self.create_subscription(Float32, '/TurtleBot3Burger/gps/speed', self.callbackSpeed, 1)
-        self.create_subscription(Imu,'/TurtleBot3Burger/imu', self.callbackImu, 1)
-        self.create_subscription(PointStamped,'/TurtleBot3Burger/gps', self.callbackGPS, 1)
+        #self.next_pose=PointStamped()
+        # self.create_subscription(PointStamped, '/TurtleBot3Burger/gps', self.next_pose_callback, self.freq_pose)
+        # self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
 
+        self.vel_pub = self.create_publisher(Twist, '/TurtleBot3Burger/cmd_vel', 10)
 
-        self.last_speed = None # Float32()
-        self.last_imu = None # Imu()
-        self.last_pose = None
-        self.rx, self.ry, self.ryaw, self.rv = [], [], [], []
-        self.e = 0.1
-        self.vel = [0,0]
+        self.pose = Pose2D()
+        self.logging_counter = 0
+        self.trajectory = list()
+
+        self.run()
+
+    '''
+    sx = 10.0  # start x position [m]
+    sy = 10.0  # start y position [m]
+    syaw = np.deg2rad(10.0)  # start yaw angle [rad]
+    sv = 1.0  # start speed [m/s]
+    sa = 0.1  # start accel [m/ss]
+    gx = 30.0  # goal x position [m]
+    gy = -10.0  # goal y position [m]
+    gyaw = np.deg2rad(20.0)  # goal yaw angle [rad]
+    gv = 1.0  # goal speed [m/s]
+    ga = 0.1  # goal accel [m/ss]
+    max_accel = 1.0  # max accel [m/ss]
+    max_jerk = 0.5  # max jerk [m/sss]
+    dt = 0.1  # time tick [s]
+    '''
+
+    def run(self):
+
+        sx = 6.33  # start x position [m]
+        sy = 0.0  # start y position [m]
+        syaw = np.deg2rad(0.0)  # start yaw angle [rad]
+        sv = 0.0  # start speed [m/s]
+        sa = 0.0  # start accel [m/ss]
         
-        print("Node initialized")
+        iv = 0.22  # intermediat speed [m/s]
+        ia = 0.00  # intermediat accel [m/ss]
 
-    def callbackImu(self, imu):
-        #print(f"imu")
-        self.last_imu = imu
-        oris = euler_from_quaternion(imu.orientation.x, imu.orientation.y, imu.orientation.z, imu.orientation.w)
-        self.yaw = oris[2]
+        gv = 0.0  # goal speed [m/s]
+        ga = 0.0  # goal accel [m/ss]
 
+        max_accel = 0.02  # max accel [m/ss]
+        max_jerk = 0.02  # max jerk [m/sss]
+        dt = 2.0  # time tick [s]
 
-    def callbackSpeed(self, speed):
-        #print("speed")
-        self.last_speed = speed
+        w1 = [8, 0, np.deg2rad(90)]
+        w2 = [8, 2, np.deg2rad(180)]
+        w3 = [6.33, 2, np.deg2rad(270)]
+        w4 = [6.33, 0, np.deg2rad(0)]
 
-    def callbackGPS(self, msg):
-        self.posx = msg.point.x
-        self.posy = msg.point.y
-        self.posz = msg.point.z
-        #print("gps")
+        '''
+        mvmt = [[sx, sy, syaw, sv, sa, w1[0], w1[1], w1[2], iv, ia, max_accel, max_jerk, dt], 
+                [w1[0], w1[1], w1[2], iv, ia, w2[0], w2[1], w2[2], iv, ia, max_accel, max_jerk, dt], 
+                [w2[0], w2[1], w2[2], iv, ia, w3[0], w3[1], w3[2], iv, ia, max_accel, max_jerk, dt], 
+                #[w3[0], w3[1], w3[2], iv, ia, w4[0], w4[1], w4[2], iv, ia, max_accel, max_jerk, dt], 
+                [w3[0], w3[1], w3[2], iv, ia, w4[0], w4[1], w4[2], iv, ia, max_accel, max_jerk, dt]]
+        '''
 
-        if self.last_imu == None or self.last_speed == None:
-            return 
+        mvmt = [[w4[0], w4[1], w4[2], iv, ia, w1[0], w1[1], w1[2], iv, ia, max_accel, max_jerk, dt], 
+                [w1[0], w1[1], w1[2], iv, ia, w2[0], w2[1], w2[2], iv, ia, max_accel, max_jerk, dt], 
+                [w2[0], w2[1], w2[2], iv, ia, w3[0], w3[1], w3[2], iv, ia, max_accel, max_jerk, dt], 
+                [w3[0], w3[1], w3[2], iv, ia, w4[0], w4[1], w4[2], iv, ia, max_accel, max_jerk, dt]]
+                
 
-        if len(self.rx) == 0:
-            self.create_trajectory(30,-10)
-            print(self.rx)
-            print(self.ry)
+        for i in range(len(mvmt)):
+            self.generate_trajectory(*mvmt[i])
+
+        self.back_generate_trajectory = self.tab_deplacement.copy()
+
+    def generate_trajectory(self, sx, sy, syaw, sv, sa, gx, gy, gyaw, gv, ga, max_accel, max_jerk, dt):
+        time, x, y, yaw, v, a, j = quintic_polynomials_planner(sx, sy, syaw, sv, sa, gx, gy, gyaw, gv, ga, max_accel, max_jerk, dt)
         
-        if abs(self.rx[0]-self.posx) < self.e and abs(self.ry[0]-self.posy) < self.e : 
-            # arrivée au prochain waypoint
-            
-            self.rx.pop(0)
-            self.ry.pop(0)
+        for i in range(len(x)):
+            self.tab_deplacement.append([time[i], x[i], y[i], yaw[i], v[i], a[i], j[i]])
+            print(f"info : x = {x[i]:.2f}, y = {y[i]:.2f}, theta = {yaw[i]:.2f}, speed = {v[i]:.2f}")
 
-            if len(self.rx) == 0 : 
-                self.create_trajectory(random.randint(-30,30), random.randint(-30,30))
-                self.publish_results([0.0,0.0])
-                print("changement de trajectoire")
-                return
+    def calculer_commande(self, x, y, yaw, vitesse_desiree, x_final, y_final, dist_prec):
+        # Paramètres du contrôleur
+        atteint = False
+        distance_tolerance = 0.24  # Tolérance de distance pour considérer l'objectif atteint
+        angle_tolerance = np.deg2rad(5)  # Tolérance d'angle pour considérer l'objectif atteint
 
-            self.vel[1] = self.ryaw[1] - self.ryaw[0]
-            self.ryaw.pop(0)
-            self.rv.pop(0)
-            self.vel[0] = self.rv[0]
-            print("changement de direction")
+        # Calcul des erreurs de position
+        distance = math.sqrt((x_final - x)**2 + (y_final - y)**2)
+        angle_to_goal = math.atan2(y_final - y, x_final - x)
+        angle_error = angle_to_goal - np.deg2rad(yaw)
 
-        self.publish_results(self.vel)
+        angle_error = (angle_error + math.pi) % (2 * math.pi) - math.pi
 
+        # Calcul de la commande linéaire
+        #print(f"dist = {distance}, dist_prec = {dist_prec}")
+        #if(distance >= dist_prec):
+        print(f"dist = {distance} < 0.24 , angle_error = {angle_error} < {angle_tolerance}")
+        #if((distance <= 0.2) and (abs(angle_error) < angle_tolerance)):
+        if(distance <= distance_tolerance):
+            #print("true ?")
+            atteint = True
+        #else:
+            #print("false?")
 
+        # Calcul de la commande angulaire
+        vitesse_angulaire = angle_error #if abs(angle_error) > angle_tolerance else 0.0
 
-        
+        return vitesse_desiree, vitesse_angulaire, distance, atteint
 
+    def speed_callback(self, msg):
+        #print("speedcallback")
+        self.v0 = msg.data # /gps/speed
 
-
-    def create_trajectory(self, gx, gy):
-        print(f"New Traj : {gx}, {gy}") 
-        sx = self.posx # start x position [m]
-        sy = self.posy # start y position [m]
-        syaw = np.deg2rad(self.yaw)  # start yaw angle [rad]
-        sv = 0  # start speed [m/s]
-        sa = 0  # start accel [m/ss]
-        gyaw = np.deg2rad(0)  # goal yaw angle [rad]
-        gv = 0.3  # goal speed [m/s]
-        ga = 0.1  # goal accel [m/ss]
-        max_accel = 0.3  # max accel [m/ss]
-        max_jerk = 0.2  # max jerk [m/sss]
-        dt = 1  # time tick [s]
-
-        time, self.rx, self.ry, self.ryaw, self.rv, ra, rj = quintic_polynomials_planner(sx, sy, syaw, sv, sa, gx, gy, gyaw, gv, ga, max_accel, max_jerk, dt)
-
-
-    def generate_trajectory(self):
-        pass
-
-    def publish_results(self, vel):
-        msg = Twist() # Create a message of this type   
-        msg.linear.x = vel[0]
+    def publish_velocity(self, velocity):
+        # Publier les consignes de vitesse au robot
+        msg = Twist()
+        msg.linear.x = velocity[0]
         msg.linear.y = 0.0
-        msg.linear.z = 0.0
-        msg.angular.x = 0.0
-        msg.angular.y = 0.0
-        msg.angular.z = vel[1]
-        self.publisher_cmd.publish(msg) # Publish the position to the topic
+        msg.angular.z = velocity[1]
+        print(f"ttb vel : {velocity[0]} ; {velocity[1]}")
+        self.vel_pub.publish(msg)
+
+
+    #def callback(self,msg1,msg2,msg3):
+    def callback(self,msg1,msg2):
+        """
+        Callback function.
+        """
+        #print("callback?")
+        #self.next_pose.point.x = msg1.point.x
+        #self.next_pose.point.y = msg1.point.y
+        #self.next_pose.point.z = msg1.point.z
+
         
-    
+        
+        # get pose = (x, y, theta) from odometry topic
+        #quarternion = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w]
+        #oris = euler_from_quaternion(msg2.pose.pose.orientation.x, msg2.pose.pose.orientation.y, msg2.pose.pose.orientation.z, msg2.pose.pose.orientation.w)
+        oris = euler_from_quaternion(msg2.orientation.x, msg2.orientation.y, msg2.orientation.z, msg2.orientation.w)
+        roll = oris[0]
+        pitch = oris[1]
+        yaw = oris[2]
+        
+        self.pose.theta = yaw
+        #self.pose.x = msg2.pose.pose.position.x
+        #self.pose.y = msg2.pose.pose.position.y
+        self.pose.x = msg1.point.x
+        self.pose.y = msg1.point.y
+
+        self.trajectory.append([self.pose.x, self.pose.y])  # save trajectory
+        #print(f"odom: x = {self.pose.x}, y = {self.pose.y}, theta = {yaw}, speed = {self.v0}")
+
+        
+
+        print(f"info ttb : x = {self.pose.x}, y = {self.pose.y}, theta = {yaw}, speed = {self.v0}")
+        
+
+        '''
+        vitesse_desiree, vitesse_angulaire, dist_precf, atteint = self.calculer_commande(self.pose.x, self.pose.y, self.pose.theta, 0.2, 10, 5, self.dist_prec)
+        print(f"self.dist = {self.dist_prec}, dist_prec = {dist_precf}")
+        self.publish_velocity([vitesse_desiree, vitesse_angulaire])
+        #print(f"vel ttb : lin = {vitesse_desiree}, ang = {vitesse_angulaire}")
+        '''
+        
+        
+        if len(self.tab_deplacement) != 0:
+            #print("debug")
+            temp = self.tab_deplacement[0]
+            vitesse_desiree = temp[4]
+            x_desiree = temp[1]
+            y_desiree = temp[2]
+            vitesse_desiree, vitesse_angulaire, dist_precf, atteint = self.calculer_commande(self.pose.x, self.pose.y, self.pose.theta, vitesse_desiree, x_desiree, y_desiree, self.dist_prec)
+            print(f"self.dist = {self.dist_prec}, dist_prec = {dist_precf}")
+            
+
+            if(atteint):
+                print("checkpoint atteint")
+                self.tab_deplacement.pop(0)
+                self.dist_prec = 99999.0
+            else:
+                self.dist_prec = dist_precf
+
+            self.publish_velocity([vitesse_desiree, vitesse_angulaire])
+
+        else:
+            self.tab_deplacement = self.back_generate_trajectory.copy()
+        
+        
+        
 
 
 

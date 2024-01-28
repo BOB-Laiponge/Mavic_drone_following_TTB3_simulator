@@ -25,7 +25,6 @@ class MyPlannerNode(Node):
     def __init__(self):
         # Initiate the Node class's constructor and give it a name
         super().__init__('MavicPlannerNode')
-        print("PIERRE YVES CORPORATION - MAVIC PLANNER NODE")
         self.subscription_1 = message_filters.Subscriber(self, PointStamped, '/Mavic_2_PRO/gps')
         self.subscription_2 = message_filters.Subscriber(self, Imu, '/imu')
         self.subscription_3 = message_filters.Subscriber(self, Float32, '/Mavic_2_PRO/gps/speed')
