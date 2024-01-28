@@ -1,4 +1,9 @@
 # ROS2 specifications
+import random
+import numpy as np
+
+from .utils import quintic_polynomials_planner
+from .euler import euler_from_quaternion
 import rclpy # Import the ROS client library for Python
 import message_filters
 from rclpy.node import Node # Enables the use of rclpy's Node class
@@ -26,6 +31,8 @@ class TurtleBotControl(Node):
         #self.ts = message_filters.ApproximateTimeSynchronizer([self.subscription_1, self.subscription_2], 30, 0.01, allow_headerless=True)
         #self.ts.registerCallback(self.callbackGPS)
 
+        self.publisher_cmd = self.create_publisher(Twist, '/TurtleBot3Burger/cmd_vel', 10)
+
 
         #self.create_subscription(Imu, '/TurtleBot3Burger/imu', self.callbackGPS, 1)
         self.create_subscription(Float32, '/TurtleBot3Burger/gps/speed', self.callbackSpeed, 1)
@@ -36,24 +43,78 @@ class TurtleBotControl(Node):
         self.last_speed = None # Float32()
         self.last_imu = None # Imu()
         self.last_pose = None
+        self.rx, self.ry, self.ryaw, self.rv = [], [], [], []
+        self.e = 0.1
+        self.vel = [0,0]
         
         print("Node initialized")
 
     def callbackImu(self, imu):
-        print(f"imu")
+        #print(f"imu")
         self.last_imu = imu
+        oris = euler_from_quaternion(imu.orientation.x, imu.orientation.y, imu.orientation.z, imu.orientation.w)
+        self.yaw = oris[2]
 
 
     def callbackSpeed(self, speed):
-        print("speed")
+        #print("speed")
         self.last_speed = speed
 
     def callbackGPS(self, msg):
         self.posx = msg.point.x
         self.posy = msg.point.y
         self.posz = msg.point.z
+        #print("gps")
 
-        print("gps")
+        if self.last_imu == None or self.last_speed == None:
+            return 
+
+        if len(self.rx) == 0:
+            self.create_trajectory(30,-10)
+            print(self.rx)
+            print(self.ry)
+        
+        if abs(self.rx[0]-self.posx) < self.e and abs(self.ry[0]-self.posy) < self.e : 
+            # arrivée au prochain waypoint
+            
+            self.rx.pop(0)
+            self.ry.pop(0)
+
+            if len(self.rx) == 0 : 
+                self.create_trajectory(random.randint(-30,30), random.randint(-30,30))
+                self.publish_results([0.0,0.0])
+                print("changement de trajectoire")
+                return
+
+            self.vel[1] = self.ryaw[1] - self.ryaw[0]
+            self.ryaw.pop(0)
+            self.rv.pop(0)
+            self.vel[0] = self.rv[0]
+            print("changement de direction")
+
+        self.publish_results(self.vel)
+
+
+
+        
+
+
+
+    def create_trajectory(self, gx, gy):
+        print(f"New Traj : {gx}, {gy}") 
+        sx = self.posx # start x position [m]
+        sy = self.posy # start y position [m]
+        syaw = np.deg2rad(self.yaw)  # start yaw angle [rad]
+        sv = 0  # start speed [m/s]
+        sa = 0  # start accel [m/ss]
+        gyaw = np.deg2rad(0)  # goal yaw angle [rad]
+        gv = 0.3  # goal speed [m/s]
+        ga = 0.1  # goal accel [m/ss]
+        max_accel = 0.3  # max accel [m/ss]
+        max_jerk = 0.2  # max jerk [m/sss]
+        dt = 1  # time tick [s]
+
+        time, self.rx, self.ry, self.ryaw, self.rv, ra, rj = quintic_polynomials_planner(sx, sy, syaw, sv, sa, gx, gy, gyaw, gv, ga, max_accel, max_jerk, dt)
 
 
     def generate_trajectory(self):
